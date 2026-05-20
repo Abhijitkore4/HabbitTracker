@@ -320,44 +320,21 @@
   .cal-cell.partial { background:rgba(247,201,72,0.3); color:var(--text); }
   .cal-cell.has-data { background:rgba(124,92,252,0.15); color:var(--text); }
 
-  /* ── MOBILE TOP NAV BAR ── */
-.mobile-topnav {
-  display: none;
-  position: fixed; top: 0; left: 0; right: 0; height: 60px;
-  background: var(--surface); border-bottom: 1px solid var(--border);
-  z-index: 150; align-items: center; justify-content: center;
-}
-.mobile-topnav-title {
-  font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.1rem;
-  letter-spacing: -0.3px; display: flex; align-items: center; gap: 8px;
-}
-.mobile-topnav-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+  /* ── MOBILE ── */
+  .hamburger { display:none; }
+  @media(max-width:768px){
+    .main { margin-left:0; padding:20px; padding-top:72px; }
+    .sidebar { transform:translateX(-100%); }
+    .sidebar.open { transform:translateX(0); box-shadow:8px 0 40px rgba(0,0,0,0.5); }
+    .hamburger { display:flex; flex-direction:column; gap:5px; position:fixed; top:18px; left:18px; z-index:200; background:var(--surface); border:1px solid var(--border); padding:10px; border-radius:var(--radius-sm); cursor:pointer; }
+    .hamburger span { width:20px; height:2px; background:var(--text); border-radius:2px; }
+    .dash-grid { grid-template-columns:1fr; }
+    .report-grid { grid-template-columns:1fr; }
+    .page-title { font-size:1.4rem; }
+  }
+  .sidebar-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:99; }
+  .sidebar-overlay.open { display:block; }
 
-/* ── HAMBURGER ── */
-.hamburger {
-  display: none; position: fixed; top: 14px; left: 14px; z-index: 200;
-  background: transparent; border: none; padding: 8px;
-  cursor: pointer; flex-direction: column; gap: 5px;
-}
-.hamburger span { width: 20px; height: 2px; background: var(--text); border-radius: 2px; display: block; }
-
-/* ── MOBILE BREAKPOINT ── */
-@media(max-width:768px){
-  .mobile-topnav { display: flex; }
-  .hamburger { display: flex; }
-  .main { margin-left:0; padding:20px; padding-top:80px; }
-  .sidebar { transform:translateX(-100%); top:0; z-index:160; }
-  .sidebar.open { transform:translateX(0); box-shadow:8px 0 40px rgba(0,0,0,0.6); }
-  .dash-grid { grid-template-columns:1fr; }
-  .report-grid { grid-template-columns:1fr; }
-  .page-title { font-size:1.4rem; }
-}
-
-/* Prevent page scroll when sidebar is open on mobile */
-body.sidebar-open { overflow: hidden; }
-
-.sidebar-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:155; }
-.sidebar-overlay.open { display:block; }
   /* ── TOAST ── */
   .toast { position:fixed; bottom:24px; right:24px; z-index:9999; background:var(--surface); border:1px solid var(--accent); border-radius:var(--radius-sm); padding:14px 20px; font-size:0.82rem; color:var(--text); transform:translateY(80px); opacity:0; transition:all 0.35s ease; pointer-events:none; max-width:280px; }
   .toast.show { transform:translateY(0); opacity:1; }
@@ -401,13 +378,6 @@ body.sidebar-open { overflow: hidden; }
       Continue with Google
     </button>
     <div class="login-note">Sign in to sync your habits across all your devices</div>
-  </div>
-</div>
-
-<!-- ── MOBILE TOP NAV ── -->
-<div class="mobile-topnav" id="mobileTopnav">
-  <div class="mobile-topnav-title">
-    <div class="mobile-topnav-dot"></div>Habbit Tracker
   </div>
 </div>
 
@@ -719,16 +689,12 @@ document.querySelectorAll('.nav-item').forEach(item => {
 });
 
 document.getElementById('hamburger').addEventListener('click', () => {
-  const isOpen = document.getElementById('sidebar').classList.toggle('open');
-  document.getElementById('sidebarOverlay').classList.toggle('open', isOpen);
-  document.body.classList.toggle('sidebar-open', isOpen);
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebarOverlay').classList.toggle('open');
 });
 document.getElementById('sidebarOverlay').addEventListener('click', closeSidebar);
-function closeSidebar(){
-  document.getElementById('sidebar').classList.remove('open');
-  document.getElementById('sidebarOverlay').classList.remove('open');
-  document.body.classList.remove('sidebar-open');
-}
+function closeSidebar(){ document.getElementById('sidebar').classList.remove('open'); document.getElementById('sidebarOverlay').classList.remove('open'); }
+
 // ── DASHBOARD ─────────────────────────────────────────────────────────────
 function renderDashboard(){
   const today    = todayStr();
