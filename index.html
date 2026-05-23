@@ -168,6 +168,44 @@
   .page-title span { color: var(--accent); }
   .date-badge { background: var(--surface); border: 1px solid var(--border); padding: 8px 16px; border-radius: 50px; font-size: 0.78rem; color: var(--muted); }
 
+  /* ── DATE NAVIGATOR ── */
+  .date-nav {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 50px; padding: 6px 8px;
+  }
+  .date-nav-btn {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); width: 32px; height: 32px; border-radius: 50%;
+    cursor: pointer; font-size: 1rem; display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s; flex-shrink: 0;
+  }
+  .date-nav-btn:hover { background: var(--accent); border-color: var(--accent); }
+  .date-nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .date-nav-btn:disabled:hover { background: var(--surface2); border-color: var(--border); }
+  .date-nav-label {
+    font-size: 0.78rem; color: var(--text); padding: 0 8px; text-align: center;
+    min-width: 160px; cursor: pointer; user-select: none;
+  }
+  .date-nav-label:hover { color: var(--accent); }
+  .date-nav-label.past { color: var(--accent2); }
+  .date-nav-today-btn {
+    background: var(--accent); border: none; color: #fff;
+    padding: 4px 12px; border-radius: 50px; font-size: 0.68rem;
+    cursor: pointer; font-family: 'DM Mono', monospace; transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .date-nav-today-btn:hover { opacity: 0.85; }
+  .date-nav-today-btn.hidden { display: none; }
+
+  /* ── PAST DAY BANNER ── */
+  .past-day-banner {
+    background: rgba(247,201,72,0.1); border: 1px solid rgba(247,201,72,0.3);
+    border-radius: var(--radius-sm); padding: 10px 16px; margin-bottom: 20px;
+    font-size: 0.78rem; color: var(--accent2); display: none; align-items: center; gap: 8px;
+  }
+  .past-day-banner.visible { display: flex; }
+
   /* ── CARDS ── */
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; transition: border-color 0.2s; }
   .card:hover { border-color: rgba(124,92,252,0.25); }
@@ -260,6 +298,7 @@
   .bar.mid { background:var(--accent2); }
   .bar.low { background:var(--danger); }
   .bar-day { font-size:0.62rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; }
+  .bar-day.current-day { color:var(--accent); font-weight:700; }
   .bar-pct { font-size:0.65rem; color:var(--muted); }
 
   /* ── MODAL ── */
@@ -298,6 +337,25 @@
   .btn-primary { background:var(--accent); color:#fff; }
   .btn-primary:hover { opacity:0.85; transform:scale(1.02); }
 
+  /* ── DATE PICKER MODAL ── */
+  #datePickerModal .modal { width: 320px; }
+  .date-input-wrap { position: relative; }
+  .date-input-wrap input[type="date"] {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.85rem;
+    outline: none;
+    transition: border-color 0.2s;
+    cursor: pointer;
+  }
+  input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7) sepia(1) hue-rotate(200deg); cursor: pointer; }
+  input[type="date"]:focus { border-color: var(--accent); }
+
   /* ── REPORT SECTIONS ── */
   .report-grid { display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-bottom:28px; }
   .habit-bar-row { display:flex; align-items:center; gap:14px; margin-bottom:14px; }
@@ -331,6 +389,7 @@
     .dash-grid { grid-template-columns:1fr; }
     .report-grid { grid-template-columns:1fr; }
     .page-title { font-size:1.4rem; }
+    .date-nav-label { min-width: 120px; font-size: 0.68rem; }
   }
   .sidebar-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:99; }
   .sidebar-overlay.open { display:block; }
@@ -364,7 +423,7 @@
     <div class="login-tagline">Build discipline. Track progress. Stay consistent.</div>
     <div class="login-features">
       <div class="login-feature"><span>⚡</span><span>Track daily habits with streaks</span></div>
-      <div class="login-feature"><span>📊</span><span>Weekly & monthly reports</span></div>
+      <div class="login-feature"><span>📊</span><span>Weekly &amp; monthly reports</span></div>
       <div class="login-feature"><span>🔄</span><span>Real-time sync across all devices</span></div>
       <div class="login-feature"><span>🔒</span><span>Your data, secured with Google</span></div>
     </div>
@@ -412,11 +471,19 @@
     <!-- DASHBOARD -->
     <div class="page active" id="page-dashboard">
       <div class="topbar">
-        <div class="page-title">Today's <span>Grind</span></div>
-        <div class="date-badge" id="todayDate"></div>
+        <div class="page-title" id="dashTitle">Today's <span>Grind</span></div>
+        <div class="date-nav">
+          <button class="date-nav-btn" id="prevDayBtn" title="Previous day">&#8592;</button>
+          <div class="date-nav-label" id="dateNavLabel" onclick="openDatePicker()">—</div>
+          <button class="date-nav-btn" id="nextDayBtn" title="Next day" disabled>&#8594;</button>
+          <button class="date-nav-today-btn hidden" id="goTodayBtn" onclick="goToToday()">Today</button>
+        </div>
+      </div>
+      <div class="past-day-banner" id="pastDayBanner">
+        📅 Viewing <span id="pastDayLabel"></span> — you can still check off habits for this day!
       </div>
       <div class="stats-grid">
-        <div class="stat-card c1"><div class="stat-label">Today's Progress</div><div class="stat-value" id="stat-today">0%</div><div class="stat-sub" id="stat-done-count">0 of 0 done</div></div>
+        <div class="stat-card c1"><div class="stat-label">Day's Progress</div><div class="stat-value" id="stat-today">0%</div><div class="stat-sub" id="stat-done-count">0 of 0 done</div></div>
         <div class="stat-card c2"><div class="stat-label">Best Streak</div><div class="stat-value" id="stat-streak">0 🔥</div><div class="stat-sub" id="stat-streak-label">—</div></div>
         <div class="stat-card c3"><div class="stat-label">Total Habits</div><div class="stat-value" id="stat-habits">0</div><div class="stat-sub">active habits</div></div>
         <div class="stat-card c4"><div class="stat-label">Week Score</div><div class="stat-value" id="stat-week">0%</div><div class="stat-sub">this week</div></div>
@@ -438,7 +505,7 @@
         </div>
         <div class="right-panel">
           <div class="card" style="text-align:center;">
-            <div class="section-label" style="margin-bottom:16px">Today</div>
+            <div class="section-label" style="margin-bottom:16px">Day Progress</div>
             <div class="progress-ring-wrap">
               <svg width="120" height="120" viewBox="0 0 120 120">
                 <circle class="ring-bg" cx="60" cy="60" r="50"/>
@@ -507,7 +574,7 @@
 </div>
 </div>
 
-<!-- MODAL -->
+<!-- HABIT MODAL -->
 <div class="modal-overlay" id="habitModal">
   <div class="modal">
     <div class="modal-title" id="modalTitle">New Habit</div>
@@ -522,6 +589,21 @@
   </div>
 </div>
 
+<!-- DATE PICKER MODAL -->
+<div class="modal-overlay" id="datePickerModal">
+  <div class="modal">
+    <div class="modal-title">Jump to Date</div>
+    <div class="form-group">
+      <label class="form-label">Select a past date</label>
+      <input type="date" id="datePickerInput" class="form-input">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="cancelDatePicker">Cancel</button>
+      <button class="btn btn-primary" id="confirmDatePicker">Go to Date</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <!-- Firebase SDKs -->
@@ -529,7 +611,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, doc, collection, setDoc, deleteDoc, onSnapshot, serverTimestamp, query, orderBy, getDoc, updateDoc }
+import { getFirestore, doc, collection, setDoc, deleteDoc, onSnapshot, serverTimestamp, query, orderBy }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 // ── FIREBASE CONFIG ──────────────────────────────────────────────────────
@@ -552,22 +634,119 @@ const DAYS    = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 // ── STATE ────────────────────────────────────────────────────────────────
 let currentUser = null;
-let habits = [];      // live from Firestore
-let logs   = {};      // { "YYYY-MM-DD": { habitId: true } }
+let habits = [];
+let logs   = {};
 let unsubHabits = null;
 let unsubLogs   = null;
 let editingId = null;
 let selColor = COLORS[0];
 let selEmoji = EMOJIS[0];
 
+// ── ACTIVE DATE STATE (new!) ─────────────────────────────────────────────
+let activeDate = todayStr(); // YYYY-MM-DD of the date being viewed on dashboard
+
 // ── HELPERS ──────────────────────────────────────────────────────────────
-const todayStr = () => {
+function todayStr() {
   const d = new Date();
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+}
+function dateStr(d) {
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+}
+function p(n) { return String(n).padStart(2,'0'); }
+function parseDateLocal(str) {
+  // Parse YYYY-MM-DD as local date (avoid UTC shift)
+  const [y,m,d] = str.split('-').map(Number);
+  return new Date(y, m-1, d);
+}
+function offsetDate(str, days) {
+  const d = parseDateLocal(str);
+  d.setDate(d.getDate() + days);
+  return dateStr(d);
+}
+function formatDateLabel(str) {
+  const today = todayStr();
+  const yesterday = offsetDate(today, -1);
+  if (str === today) return 'Today';
+  if (str === yesterday) return 'Yesterday';
+  const d = parseDateLocal(str);
+  return d.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
+}
+function formatDateFull(str) {
+  const d = parseDateLocal(str);
+  return d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+}
+
+// ── DATE NAVIGATION ───────────────────────────────────────────────────────
+function setActiveDate(dateString) {
+  const today = todayStr();
+  // Don't allow future dates
+  if (dateString > today) dateString = today;
+  activeDate = dateString;
+  updateDateNavUI();
+  renderDashboard();
+}
+
+function updateDateNavUI() {
+  const today = todayStr();
+  const isToday = activeDate === today;
+  const label = document.getElementById('dateNavLabel');
+  const nextBtn = document.getElementById('nextDayBtn');
+  const goTodayBtn = document.getElementById('goTodayBtn');
+  const banner = document.getElementById('pastDayBanner');
+  const pastLabel = document.getElementById('pastDayLabel');
+  const dashTitle = document.getElementById('dashTitle');
+
+  label.textContent = formatDateLabel(activeDate);
+  label.classList.toggle('past', !isToday);
+  nextBtn.disabled = isToday;
+  goTodayBtn.classList.toggle('hidden', isToday);
+
+  if (!isToday) {
+    banner.classList.add('visible');
+    pastLabel.textContent = formatDateFull(activeDate);
+    dashTitle.innerHTML = `Past <span>Day</span>`;
+  } else {
+    banner.classList.remove('visible');
+    dashTitle.innerHTML = `Today's <span>Grind</span>`;
+  }
+}
+
+window.goToToday = function() { setActiveDate(todayStr()); };
+
+document.getElementById('prevDayBtn').addEventListener('click', () => {
+  setActiveDate(offsetDate(activeDate, -1));
+});
+document.getElementById('nextDayBtn').addEventListener('click', () => {
+  setActiveDate(offsetDate(activeDate, 1));
+});
+
+// ── DATE PICKER ───────────────────────────────────────────────────────────
+window.openDatePicker = function() {
+  const input = document.getElementById('datePickerInput');
+  input.value = activeDate;
+  input.max = todayStr();
+  // Set a reasonable min (e.g. 2 years ago)
+  const minDate = new Date();
+  minDate.setFullYear(minDate.getFullYear() - 2);
+  input.min = dateStr(minDate);
+  document.getElementById('datePickerModal').classList.add('open');
 };
-const dateStr = d => `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
-const p = n => String(n).padStart(2,'0');
-const uid = () => Math.random().toString(36).slice(2,10);
+
+document.getElementById('cancelDatePicker').addEventListener('click', () => {
+  document.getElementById('datePickerModal').classList.remove('open');
+});
+document.getElementById('datePickerModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('datePickerModal'))
+    document.getElementById('datePickerModal').classList.remove('open');
+});
+document.getElementById('confirmDatePicker').addEventListener('click', () => {
+  const val = document.getElementById('datePickerInput').value;
+  if (val) {
+    setActiveDate(val);
+    document.getElementById('datePickerModal').classList.remove('open');
+  }
+});
 
 // ── SYNC INDICATOR ───────────────────────────────────────────────────────
 function setSyncing(){ document.getElementById('syncDot').className='sync-dot syncing'; document.getElementById('syncLabel').textContent='Syncing...'; }
@@ -593,7 +772,9 @@ document.getElementById('googleSignInBtn').addEventListener('click', async () =>
   try {
     await signInWithPopup(auth, new GoogleAuthProvider());
   } catch(e) {
-    showToast('❌ Sign in failed. Try again.'); btn.disabled=false; btn.innerHTML=`<svg class="google-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg> Continue with Google`;
+    showToast('❌ Sign in failed. Try again.');
+    btn.disabled=false;
+    btn.innerHTML=`<svg class="google-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg> Continue with Google`;
   }
 });
 
@@ -606,7 +787,6 @@ function showApp(user){
   document.getElementById('loadingScreen').style.display='none';
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('appScreen').style.display='block';
-  // User panel
   document.getElementById('userName').textContent = user.displayName || 'User';
   document.getElementById('userEmail').textContent = user.email || '';
   if (user.photoURL) {
@@ -616,7 +796,9 @@ function showApp(user){
   } else {
     document.getElementById('userAvatar').textContent = (user.displayName||'U')[0].toUpperCase();
   }
-  document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+  // Init date nav
+  activeDate = todayStr();
+  updateDateNavUI();
 }
 function showLogin(){
   document.getElementById('loadingScreen').style.display='none';
@@ -626,17 +808,14 @@ function showLogin(){
 
 // ── FIRESTORE LISTENERS ───────────────────────────────────────────────────
 function startListeners(uid){
-  // Habits listener
   const habitsRef = collection(db,'users',uid,'habits');
   unsubHabits = onSnapshot(query(habitsRef, orderBy('createdAt','asc')), snap => {
     habits = snap.docs.map(d => ({id:d.id, ...d.data()}));
-    // Add defaults if new user
     if(habits.length === 0) addDefaultHabits(uid);
     else renderAll();
     setSynced();
   }, () => setSyncErr());
 
-  // Logs listener — last 60 days
   const logsRef = collection(db,'users',uid,'logs');
   unsubLogs = onSnapshot(logsRef, snap => {
     logs = {};
@@ -682,8 +861,8 @@ document.querySelectorAll('.nav-item').forEach(item => {
     item.classList.add('active');
     document.getElementById('page-'+item.dataset.page).classList.add('active');
     closeSidebar();
-    if(item.dataset.page==='weekly')   renderWeekly();
-    if(item.dataset.page==='monthly')  renderMonthly();
+    if(item.dataset.page==='weekly')    renderWeekly();
+    if(item.dataset.page==='monthly')   renderMonthly();
     if(item.dataset.page==='dashboard') renderDashboard();
   });
 });
@@ -697,13 +876,11 @@ function closeSidebar(){ document.getElementById('sidebar').classList.remove('op
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────
 function renderDashboard(){
-  const today    = todayStr();
-  const todayLog = logs[today] || {};
-  const total    = habits.length;
-  const done     = habits.filter(h => todayLog[h.id]).length;
-  const pct      = total ? Math.round(done/total*100) : 0;
+  const dayLog = logs[activeDate] || {};
+  const total  = habits.length;
+  const done   = habits.filter(h => dayLog[h.id]).length;
+  const pct    = total ? Math.round(done/total*100) : 0;
 
-  document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
   document.getElementById('stat-today').textContent = pct+'%';
   document.getElementById('stat-done-count').textContent = `${done} of ${total} done`;
   document.getElementById('stat-habits').textContent = total;
@@ -730,7 +907,7 @@ function renderDashboard(){
     list.innerHTML=`<div class="empty-state"><div class="big">🌱</div><p>No habits yet. Add your first one!</p></div>`;
   } else {
     list.innerHTML = habits.map(h => {
-      const isDone  = !!todayLog[h.id];
+      const isDone  = !!dayLog[h.id];
       const streak  = computeStreak(h.id);
       return `<div class="habit-item${isDone?' done':''}" style="--habit-color:${h.color}">
         <button class="check-btn" onclick="toggleHabit('${h.id}')">${isDone?'✓':''}</button>
@@ -755,24 +932,25 @@ function renderDashboard(){
     sl.innerHTML = [...habits].sort((a,b)=>computeStreak(b.id)-computeStreak(a.id))
       .map(h=>`<div class="streak-row"><span>${h.emoji} ${h.name}</span><span class="streak-count">${computeStreak(h.id)} 🔥</span></div>`).join('');
   }
+
+  updateDateNavUI();
 }
 
-// ── TOGGLE HABIT ──────────────────────────────────────────────────────────
+// ── TOGGLE HABIT (now uses activeDate) ───────────────────────────────────
 window.toggleHabit = async function(habitId){
   if(!currentUser) return;
   setSyncing();
-  const today = todayStr();
-  const logRef = doc(db,'users',currentUser.uid,'logs',today);
-  const current = (logs[today]||{})[habitId];
+  const logRef = doc(db,'users',currentUser.uid,'logs',activeDate);
+  const current = (logs[activeDate]||{})[habitId];
   try {
     if(current){
-      // Uncheck — remove field
-      const { [habitId]: _, ...rest } = (logs[today]||{});
+      const { [habitId]: _, ...rest } = (logs[activeDate]||{});
       await setDoc(logRef, rest);
       showToast('↩️ Habit unmarked');
     } else {
-      await setDoc(logRef, { ...(logs[today]||{}), [habitId]: true }, {merge:true});
-      showToast('✅ Habit marked complete!');
+      await setDoc(logRef, { ...(logs[activeDate]||{}), [habitId]: true }, {merge:true});
+      const isToday = activeDate === todayStr();
+      showToast(isToday ? '✅ Habit marked complete!' : '✅ Habit marked for ' + formatDateLabel(activeDate) + '!');
     }
     setSynced();
   } catch(e){ setSyncErr(); showToast('❌ Sync failed. Check connection.'); }
@@ -869,14 +1047,27 @@ function getWeekScores(){
 
 function renderMiniWeekBars(id){
   const el=document.getElementById(id); if(!el) return;
+  const today = todayStr();
   el.innerHTML = getWeekDays().map(({date,label})=>{
     const log=logs[date]||{};
     const done=habits.filter(h=>log[h.id]).length;
     const pct=habits.length?Math.round(done/habits.length*100):0;
     const cls=pct>=80?'good':pct>=50?'mid':pct>0?'low':'';
-    return `<div class="bar-col"><div class="bar-pct">${pct?pct+'%':''}</div><div class="bar-wrap"><div class="bar ${cls}" style="height:${Math.max(pct,4)}px;max-height:80px;"></div></div><div class="bar-day">${label}</div></div>`;
+    const isActive = date === activeDate;
+    const isToday = date === today;
+    const dayLabelCls = isToday ? 'bar-day current-day' : 'bar-day';
+    const barStyle = isActive ? `height:${Math.max(pct,4)}px;max-height:80px;outline:2px solid var(--accent2);outline-offset:2px;` : `height:${Math.max(pct,4)}px;max-height:80px;`;
+    return `<div class="bar-col" onclick="setActiveDateFromBar('${date}')" style="cursor:pointer;opacity:${date > today ? 0.3 : 1}">
+      <div class="bar-pct">${pct?pct+'%':''}</div>
+      <div class="bar-wrap"><div class="bar ${cls}" style="${barStyle}"></div></div>
+      <div class="${dayLabelCls}">${label}</div>
+    </div>`;
   }).join('');
 }
+
+window.setActiveDateFromBar = function(date) {
+  if (date <= todayStr()) setActiveDate(date);
+};
 
 // ── WEEKLY ────────────────────────────────────────────────────────────────
 function renderWeekly(){
@@ -886,7 +1077,7 @@ function renderWeekly(){
   const totalDone=days.reduce((acc,{date})=>{ const log=logs[date]||{}; return acc+habits.filter(h=>log[h.id]).length; },0);
   const totalMissed=days.reduce((acc,{date})=>{ const log=logs[date]||{}; return acc+habits.filter(h=>!log[h.id]).length; },0);
 
-  document.getElementById('weekRange').textContent=`${new Date(days[0].date+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${new Date(days[6].date+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}`;
+  document.getElementById('weekRange').textContent=`${parseDateLocal(days[0].date).toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${parseDateLocal(days[6].date).toLocaleDateString('en-US',{month:'short',day:'numeric'})}`;
   document.getElementById('w-avg').textContent=avg+'%';
   document.getElementById('w-best-day').textContent=days[bestIdx]?.label||'—';
   document.getElementById('w-best-day-val').textContent=(scores[bestIdx]||0)+'%';
@@ -933,7 +1124,10 @@ function renderMonthly(){
   monthDates.forEach(({date,day},idx)=>{
     const s=scores[idx];
     const cls=s===100?'perfect':s>=70?'good':s>=40?'mid':s>0?'partial':date<=todayStr()?'has-data':'';
-    cells+=`<div class="cal-cell ${cls}" title="${date}: ${s}%">${day}</div>`;
+    // Highlight if this day matches activeDate
+    const isActive = date === activeDate;
+    const extraStyle = isActive ? 'outline:2px solid var(--accent2);outline-offset:1px;' : '';
+    cells+=`<div class="cal-cell ${cls}" title="${date}: ${s}%" style="${extraStyle}" onclick="jumpToDayFromCal('${date}')">${day}</div>`;
   });
   cal.innerHTML=cells;
 
@@ -952,12 +1146,22 @@ function renderMonthly(){
     <div class="highlight-row"><span>Perfect Days</span><span class="highlight-val" style="color:var(--accent3)">${perfect} 🏆</span></div>`;
 }
 
+// Jump to a day from calendar click and go to dashboard
+window.jumpToDayFromCal = function(date) {
+  if (date > todayStr()) return;
+  setActiveDate(date);
+  // Switch to dashboard
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelector('[data-page="dashboard"]').classList.add('active');
+  document.getElementById('page-dashboard').classList.add('active');
+};
+
 // ── TOAST ─────────────────────────────────────────────────────────────────
 function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2800); }
 window.showToast = showToast;
 
 // ── INIT ──────────────────────────────────────────────────────────────────
-// Show loading for 1s max, then check auth state
 setTimeout(()=>{ if(document.getElementById('loadingScreen').style.display!=='none'&&!currentUser){ showLogin(); } },3000);
 </script>
 </body>
