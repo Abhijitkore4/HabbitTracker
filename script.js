@@ -1,7 +1,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, doc, collection, setDoc, getDoc, deleteDoc, onSnapshot, serverTimestamp, query, orderBy }
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+  doc, collection, setDoc, getDoc, updateDoc, deleteField, writeBatch, onSnapshot, serverTimestamp, query, orderBy }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 // ── FIREBASE CONFIG ──────────────────────────────────────────────────────
@@ -15,7 +16,16 @@ const firebaseConfig = {
 };
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app);
+
+// Fix 14: offline cache so writes are kept and synced later
+let db;
+try {
+  db = initializeFirestore(app, {
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+  });
+} catch (e) {
+  db = getFirestore(app);
+}
 
 // ── CONSTANTS ────────────────────────────────────────────────────────────
 const COLORS  = ['#7c5cfc','#f7c948','#3ee8b5','#ff4f6d','#4fa3ff','#ff8c42','#b6ff6f','#ff6bff'];
@@ -31,9 +41,14 @@ let unsubLogs   = null;
 let editingId = null;
 let selColor = COLORS[0];
 let selEmoji = EMOJIS[0];
+let weekOffset = 0;    // 0 = this week, -1 = last week, ...
+let monthOffset = 0;   // 0 = this month, -1 = last month, ...
+let toastTimer = null;
+let pending = { habits:false, logs:false };
 
 // ── ACTIVE DATE STATE ────────────────────────────────────────────────────
 let activeDate = todayStr(); // YYYY-MM-DD of the date being viewed on dashboard
+let lastToday = todayStr();
 
 // ── HELPERS ──────────────────────────────────────────────────────────────
 function todayStr() {
@@ -65,6 +80,14 @@ function formatDateLabel(str) {
 function formatDateFull(str) {
   const d = parseDateLocal(str);
   return d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+}
+
+// Fix 17: escape user text before putting it into innerHTML
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function safeColor(c) {
+  return /^#[0-9a-f]{6}$/i.test(c) ? c : COLORS[0];
 }
 
 // ── DATE NAVIGATION ───────────────────────────────────────────────────────
@@ -143,6 +166,12 @@ function setSyncing(){ document.getElementById('syncDot').className='sync-dot sy
 function setSynced() { document.getElementById('syncDot').className='sync-dot'; document.getElementById('syncLabel').textContent='Synced'; }
 function setSyncErr(){ document.getElementById('syncDot').className='sync-dot error'; document.getElementById('syncLabel').textContent='Sync error'; }
 
+// Fix 14: status comes from Firestore's pending-writes flag, not from awaiting writes
+function updateSync(key, snap){
+  pending[key] = snap.metadata.hasPendingWrites;
+  if (pending.habits || pending.logs) setSyncing(); else setSynced();
+}
+
 // ── AUTH ─────────────────────────────────────────────────────────────────
 onAuthStateChanged(auth, user => {
   if (user) {
@@ -211,19 +240,19 @@ function showLogin(){
 // ── FIRESTORE LISTENERS ───────────────────────────────────────────────────
 function startListeners(uid){
   const habitsRef = collection(db,'users',uid,'habits');
-  unsubHabits = onSnapshot(query(habitsRef, orderBy('createdAt','asc')), snap => {
+  unsubHabits = onSnapshot(query(habitsRef, orderBy('createdAt','asc')), { includeMetadataChanges:true }, snap => {
     habits = snap.docs.map(d => ({id:d.id, ...d.data()}));
-    if(habits.length === 0) addDefaultHabits(uid);
+    if(habits.length === 0 && !snap.metadata.fromCache) addDefaultHabits(uid);
     renderAll();
-    setSynced();
+    updateSync('habits', snap);
   }, () => setSyncErr());
 
   const logsRef = collection(db,'users',uid,'logs');
-  unsubLogs = onSnapshot(logsRef, snap => {
+  unsubLogs = onSnapshot(logsRef, { includeMetadataChanges:true }, snap => {
     logs = {};
     snap.docs.forEach(d => { logs[d.id] = d.data(); });
     renderAll();
-    setSynced();
+    updateSync('logs', snap);
   }, () => setSyncErr());
 }
 
@@ -231,6 +260,7 @@ function stopListeners(){
   if(unsubHabits){ unsubHabits(); unsubHabits=null; }
   if(unsubLogs){ unsubLogs(); unsubLogs=null; }
   habits=[]; logs={}; defaultsChecked=false;
+  pending = { habits:false, logs:false };
 }
 
 // ── DEFAULT HABITS ────────────────────────────────────────────────────────
@@ -277,8 +307,8 @@ document.querySelectorAll('.nav-item').forEach(item => {
     item.classList.add('active');
     document.getElementById('page-'+item.dataset.page).classList.add('active');
     closeSidebar();
-    if(item.dataset.page==='weekly')    renderWeekly();
-    if(item.dataset.page==='monthly')   renderMonthly();
+    if(item.dataset.page==='weekly')    { weekOffset=0;  renderWeekly(); }
+    if(item.dataset.page==='monthly')   { monthOffset=0; renderMonthly(); }
     if(item.dataset.page==='dashboard') renderDashboard();
   });
 });
@@ -289,6 +319,12 @@ document.getElementById('hamburger').addEventListener('click', () => {
 });
 document.getElementById('sidebarOverlay').addEventListener('click', closeSidebar);
 function closeSidebar(){ document.getElementById('sidebar').classList.remove('open'); document.getElementById('sidebarOverlay').classList.remove('open'); }
+
+// Fix 16: previous / next week and month
+document.getElementById('prevWeekBtn').addEventListener('click', () => { weekOffset--; renderWeekly(); });
+document.getElementById('nextWeekBtn').addEventListener('click', () => { if(weekOffset<0){ weekOffset++; renderWeekly(); } });
+document.getElementById('prevMonthBtn').addEventListener('click', () => { monthOffset--; renderMonthly(); });
+document.getElementById('nextMonthBtn').addEventListener('click', () => { if(monthOffset<0){ monthOffset++; renderMonthly(); } });
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────
 function renderDashboard(){
@@ -305,9 +341,9 @@ function renderDashboard(){
   const best    = streaks.length ? Math.max(...streaks) : 0;
   const bestH   = habits[streaks.indexOf(best)];
   document.getElementById('stat-streak').textContent = best+' 🔥';
-  document.getElementById('stat-streak-label').textContent = bestH?.name || '—';
+  document.getElementById('stat-streak-label').textContent = best>0 ? (bestH?.name || '—') : '—';
 
-  const ws = getWeekScores();
+  const ws = getElapsedWeekScores();
   const wAvg = ws.length ? Math.round(ws.reduce((a,b)=>a+b,0)/ws.length) : 0;
   document.getElementById('stat-week').textContent = wAvg+'%';
 
@@ -325,11 +361,11 @@ function renderDashboard(){
     list.innerHTML = habits.map(h => {
       const isDone  = !!dayLog[h.id];
       const streak  = computeStreak(h.id);
-      return `<div class="habit-item${isDone?' done':''}" style="--habit-color:${h.color}">
+      return `<div class="habit-item${isDone?' done':''}" style="--habit-color:${safeColor(h.color)}">
         <button class="check-btn" onclick="toggleHabit('${h.id}')">${isDone?'✓':''}</button>
         <div class="habit-info">
-          <div class="habit-name">${h.emoji} ${h.name}</div>
-          <div class="habit-meta"><span>${h.goal||'Daily habit'}</span><span>🔥 ${streak} day streak</span></div>
+          <div class="habit-name">${esc(h.emoji)} ${esc(h.name)}</div>
+          <div class="habit-meta"><span>${esc(h.goal||'Daily habit')}</span><span>🔥 ${streak} day streak</span></div>
         </div>
         <div class="habit-actions">
           <button class="action-btn" onclick="openEdit('${h.id}')">✏️</button>
@@ -346,42 +382,54 @@ function renderDashboard(){
   if(!habits.length){ sl.innerHTML=`<div style="font-size:0.75rem;color:var(--muted);padding:12px 0">Add habits to see streaks</div>`; }
   else {
     sl.innerHTML = [...habits].sort((a,b)=>computeStreak(b.id)-computeStreak(a.id))
-      .map(h=>`<div class="streak-row"><span>${h.emoji} ${h.name}</span><span class="streak-count">${computeStreak(h.id)} 🔥</span></div>`).join('');
+      .map(h=>`<div class="streak-row"><span>${esc(h.emoji)} ${esc(h.name)}</span><span class="streak-count">${computeStreak(h.id)} 🔥</span></div>`).join('');
   }
 
   updateDateNavUI();
 }
 
 // ── TOGGLE HABIT (uses activeDate) ───────────────────────────────────────
-window.toggleHabit = async function(habitId){
+// Fix 12 + 14: update only this habit's field, don't wait for the server
+window.toggleHabit = function(habitId){
   if(!currentUser) return;
   setSyncing();
   const logRef = doc(db,'users',currentUser.uid,'logs',activeDate);
   const current = (logs[activeDate]||{})[habitId];
-  try {
-    if(current){
-      const { [habitId]: _, ...rest } = (logs[activeDate]||{});
-      await setDoc(logRef, rest);
-      showToast('↩️ Habit unmarked');
-    } else {
-      await setDoc(logRef, { ...(logs[activeDate]||{}), [habitId]: true }, {merge:true});
-      const isToday = activeDate === todayStr();
-      showToast(isToday ? '✅ Habit marked complete!' : '✅ Habit marked for ' + formatDateLabel(activeDate) + '!');
-    }
-    setSynced();
-  } catch(e){ setSyncErr(); showToast('❌ Sync failed. Check connection.'); }
+  const op = current
+    ? updateDoc(logRef, { [habitId]: deleteField() })
+    : setDoc(logRef, { [habitId]: true }, { merge:true });
+  if(current){
+    showToast('↩️ Habit unmarked');
+  } else {
+    showToast(activeDate === todayStr() ? '✅ Habit marked complete!' : '✅ Habit marked for ' + formatDateLabel(activeDate) + '!');
+  }
+  op.catch(() => { setSyncErr(); showToast('❌ Sync failed. Check connection.'); });
 };
 
 // ── DELETE HABIT ──────────────────────────────────────────────────────────
-window.deleteHabit = async function(id){
+// Fix 13: also remove this habit from every log day
+window.deleteHabit = function(id){
   if(!confirm('Delete this habit? This cannot be undone.')) return;
   if(!currentUser) return;
+  const uid = currentUser.uid;
   setSyncing();
-  try {
-    await deleteDoc(doc(db,'users',currentUser.uid,'habits',id));
-    showToast('🗑️ Habit deleted');
-    setSynced();
-  } catch(e){ setSyncErr(); showToast('❌ Delete failed'); }
+
+  const ops = [ b => b.delete(doc(db,'users',uid,'habits',id)) ];
+  Object.keys(logs).forEach(date => {
+    if(logs[date] && id in logs[date]){
+      ops.push(b => b.update(doc(db,'users',uid,'logs',date), { [id]: deleteField() }));
+    }
+  });
+  const chunks = [];
+  for(let i=0; i<ops.length; i+=400) chunks.push(ops.slice(i, i+400));
+
+  Promise.all(chunks.map(chunk => {
+    const b = writeBatch(db);
+    chunk.forEach(fn => fn(b));
+    return b.commit();
+  })).catch(() => { setSyncErr(); showToast('❌ Delete failed'); });
+
+  showToast('🗑️ Habit deleted');
 };
 
 // ── MODAL ─────────────────────────────────────────────────────────────────
@@ -405,7 +453,7 @@ document.getElementById('addHabitBtn').addEventListener('click', () => {
 
 window.openEdit = function(id){
   const h = habits.find(x=>x.id===id); if(!h) return;
-  editingId=id; selColor=h.color; selEmoji=h.emoji;
+  editingId=id; selColor=safeColor(h.color); selEmoji=h.emoji;
   document.getElementById('habitName').value=h.name;
   document.getElementById('habitGoal').value=h.goal||'';
   document.getElementById('modalTitle').textContent='Edit Habit';
@@ -416,24 +464,41 @@ window.openEdit = function(id){
 document.getElementById('cancelModal').addEventListener('click', () => document.getElementById('habitModal').classList.remove('open'));
 document.getElementById('habitModal').addEventListener('click', e => { if(e.target===document.getElementById('habitModal')) document.getElementById('habitModal').classList.remove('open'); });
 
-document.getElementById('saveHabit').addEventListener('click', async () => {
+document.getElementById('saveHabit').addEventListener('click', () => {
   const name = document.getElementById('habitName').value.trim();
   if(!name){ showToast('⚠️ Please enter a habit name'); return; }
   if(!currentUser) return;
   setSyncing();
   const data = { name, emoji:selEmoji, color:selColor, goal:document.getElementById('habitGoal').value.trim() };
-  try {
-    if(editingId){
-      await setDoc(doc(db,'users',currentUser.uid,'habits',editingId), data, {merge:true});
-      showToast('✏️ Habit updated!');
-    } else {
-      const ref = doc(collection(db,'users',currentUser.uid,'habits'));
-      await setDoc(ref, {...data, createdAt: serverTimestamp()});
-      showToast('🎉 Habit added!');
+  let op;
+  if(editingId){
+    op = setDoc(doc(db,'users',currentUser.uid,'habits',editingId), data, {merge:true});
+    showToast('✏️ Habit updated!');
+  } else {
+    const ref = doc(collection(db,'users',currentUser.uid,'habits'));
+    op = setDoc(ref, {...data, createdAt: serverTimestamp()});
+    showToast('🎉 Habit added!');
+  }
+  document.getElementById('habitModal').classList.remove('open');
+  op.catch(() => { setSyncErr(); showToast('❌ Save failed'); });
+});
+
+// Fix 20: Enter saves / confirms, Esc closes any open modal
+document.addEventListener('keydown', e => {
+  const habitModal = document.getElementById('habitModal');
+  const dateModal  = document.getElementById('datePickerModal');
+  if(e.key === 'Escape'){
+    habitModal.classList.remove('open');
+    dateModal.classList.remove('open');
+  } else if(e.key === 'Enter' && e.target.tagName === 'INPUT'){
+    if(habitModal.classList.contains('open')){
+      e.preventDefault();
+      document.getElementById('saveHabit').click();
+    } else if(dateModal.classList.contains('open')){
+      e.preventDefault();
+      document.getElementById('confirmDatePicker').click();
     }
-    document.getElementById('habitModal').classList.remove('open');
-    setSynced();
-  } catch(e){ setSyncErr(); showToast('❌ Save failed'); }
+  }
 });
 
 // ── STREAK ────────────────────────────────────────────────────────────────
@@ -449,22 +514,28 @@ function computeStreak(habitId){
 }
 
 // ── WEEK HELPERS ──────────────────────────────────────────────────────────
-function getWeekDays(){
-  const today=new Date(); const dow=today.getDay();
-  return Array.from({length:7},(_,i)=>{ const d=new Date(today); d.setDate(today.getDate()-dow+i); return {date:dateStr(d),label:DAYS[i]}; });
+function getWeekDays(offset=0){
+  const base=new Date(); base.setDate(base.getDate()+offset*7);
+  const dow=base.getDay();
+  return Array.from({length:7},(_,i)=>{ const d=new Date(base); d.setDate(base.getDate()-dow+i); return {date:dateStr(d),label:DAYS[i]}; });
 }
-function getWeekScores(){
-  return getWeekDays().map(({date}) => {
+function getWeekScores(offset=0){
+  return getWeekDays(offset).map(({date}) => {
     const log=logs[date]||{};
     const done=habits.filter(h=>log[h.id]).length;
     return habits.length ? Math.round(done/habits.length*100) : 0;
   });
 }
+function getElapsedWeekScores(offset=0){
+  const today = todayStr();
+  const days = getWeekDays(offset);
+  return getWeekScores(offset).filter((_, i) => days[i].date <= today);
+}
 
-function renderMiniWeekBars(id){
+function renderMiniWeekBars(id, offset=0){
   const el=document.getElementById(id); if(!el) return;
   const today = todayStr();
-  el.innerHTML = getWeekDays().map(({date,label})=>{
+  el.innerHTML = getWeekDays(offset).map(({date,label})=>{
     const log=logs[date]||{};
     const done=habits.filter(h=>log[h.id]).length;
     const pct=habits.length?Math.round(done/habits.length*100):0;
@@ -472,7 +543,8 @@ function renderMiniWeekBars(id){
     const isActive = date === activeDate;
     const isToday = date === today;
     const dayLabelCls = isToday ? 'bar-day current-day' : 'bar-day';
-    const barStyle = isActive ? `height:${Math.max(pct,4)}px;max-height:80px;outline:2px solid var(--accent2);outline-offset:2px;` : `height:${Math.max(pct,4)}px;max-height:80px;`;
+    const barH = Math.max(Math.round(pct*0.8),4);
+    const barStyle = isActive ? `height:${barH}px;outline:2px solid var(--accent2);outline-offset:2px;` : `height:${barH}px;`;
     return `<div class="bar-col" onclick="setActiveDateFromBar('${date}')" style="cursor:pointer;opacity:${date > today ? 0.3 : 1}">
       <div class="bar-pct">${pct?pct+'%':''}</div>
       <div class="bar-wrap"><div class="bar ${cls}" style="${barStyle}"></div></div>
@@ -487,47 +559,65 @@ window.setActiveDateFromBar = function(date) {
 
 // ── WEEKLY ────────────────────────────────────────────────────────────────
 function renderWeekly(){
-  const days=getWeekDays(); const scores=getWeekScores();
-  const avg=scores.length?Math.round(scores.reduce((a,b)=>a+b,0)/scores.length):0;
+  const days=getWeekDays(weekOffset); const scores=getWeekScores(weekOffset);
+  const elapsed=getElapsedWeekScores(weekOffset);
+  const elapsedDays=elapsed.length;
+  const avg=elapsedDays?Math.round(elapsed.reduce((a,b)=>a+b,0)/elapsedDays):0;
   const bestIdx=scores.indexOf(Math.max(...scores));
   const totalDone=days.reduce((acc,{date})=>{ const log=logs[date]||{}; return acc+habits.filter(h=>log[h.id]).length; },0);
-  const totalMissed=days.reduce((acc,{date})=>{ const log=logs[date]||{}; return acc+habits.filter(h=>!log[h.id]).length; },0);
+  const totalMissed=days.filter(({date})=>date<=todayStr()).reduce((acc,{date})=>{ const log=logs[date]||{}; return acc+habits.filter(h=>!log[h.id]).length; },0);
 
+  document.getElementById('nextWeekBtn').disabled = weekOffset>=0;
   document.getElementById('weekRange').textContent=`${parseDateLocal(days[0].date).toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${parseDateLocal(days[6].date).toLocaleDateString('en-US',{month:'short',day:'numeric'})}`;
   document.getElementById('w-avg').textContent=avg+'%';
-  document.getElementById('w-best-day').textContent=days[bestIdx]?.label||'—';
-  document.getElementById('w-best-day-val').textContent=(scores[bestIdx]||0)+'%';
+  const bestScore=scores[bestIdx]||0;
+  document.getElementById('w-best-day').textContent=bestScore>0?days[bestIdx].label:'—';
+  document.getElementById('w-best-day-val').textContent=bestScore+'%';
   document.getElementById('w-total').textContent=totalDone;
   document.getElementById('w-missed').textContent=totalMissed;
 
-  renderMiniWeekBars('weeklyBars');
+  renderMiniWeekBars('weeklyBars', weekOffset);
 
   const hb=document.getElementById('habitBars');
   hb.innerHTML=habits.length?habits.map(h=>{
     const done=days.filter(({date})=>logs[date]&&logs[date][h.id]).length;
-    const pct=Math.round(done/7*100);
-    return `<div class="habit-bar-row"><div class="habit-bar-label">${h.emoji} ${h.name}</div><div class="habit-bar-track"><div class="habit-bar-fill" style="width:${pct}%;background:${h.color}"></div></div><div class="habit-bar-pct">${pct}%</div></div>`;
+    const pct=elapsedDays?Math.round(done/elapsedDays*100):0;
+    return `<div class="habit-bar-row"><div class="habit-bar-label">${esc(h.emoji)} ${esc(h.name)}</div><div class="habit-bar-track"><div class="habit-bar-fill" style="width:${pct}%;background:${safeColor(h.color)}"></div></div><div class="habit-bar-pct">${pct}%</div></div>`;
   }).join(''):'<div style="font-size:0.8rem;color:var(--muted)">No habits yet</div>';
 
   const ws=document.getElementById('weekStreaks');
   ws.innerHTML=habits.length?[...habits].map(h=>({...h,s:computeStreak(h.id)})).sort((a,b)=>b.s-a.s)
-    .map((h,i)=>`<div class="highlight-row"><span>${i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1)} ${h.emoji} ${h.name}</span><span class="highlight-val" style="color:${h.color}">${h.s} 🔥</span></div>`).join('')
+    .map((h,i)=>`<div class="highlight-row"><span>${i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1)} ${esc(h.emoji)} ${esc(h.name)}</span><span class="highlight-val" style="color:${safeColor(h.color)}">${h.s} 🔥</span></div>`).join('')
     :'<div style="font-size:0.8rem;color:var(--muted)">No habits yet</div>';
 }
 
 // ── MONTHLY ───────────────────────────────────────────────────────────────
 function renderMonthly(){
-  const now=new Date(); const year=now.getFullYear(); const month=now.getMonth();
+  const now=new Date();
+  const base=new Date(now.getFullYear(), now.getMonth()+monthOffset, 1);
+  const year=base.getFullYear(); const month=base.getMonth();
   const daysInMonth=new Date(year,month+1,0).getDate();
-  document.getElementById('monthName').textContent=now.toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  const today=todayStr();
+  const elapsedDays = monthOffset===0 ? now.getDate() : daysInMonth;
+  document.getElementById('nextMonthBtn').disabled = monthOffset>=0;
+  document.getElementById('monthName').textContent=base.toLocaleDateString('en-US',{month:'long',year:'numeric'});
 
   const monthDates=Array.from({length:daysInMonth},(_,i)=>({date:`${year}-${p(month+1)}-${p(i+1)}`,day:i+1}));
   const scores=monthDates.map(({date})=>{ const log=logs[date]||{}; const done=habits.filter(h=>log[h.id]).length; return habits.length?Math.round(done/habits.length*100):0; });
   const activeDays=scores.filter(s=>s>0).length;
-  const avg=activeDays?Math.round(scores.filter(s=>s>0).reduce((a,b)=>a+b,0)/activeDays):0;
+  const doneSoFar=monthDates.reduce((acc,{date})=>acc+habits.filter(h=>logs[date]&&logs[date][h.id]).length,0);
+  const avg=habits.length?Math.round(doneSoFar/(habits.length*elapsedDays)*100):0;
   const perfect=scores.filter(s=>s===100).length;
-  const missed=monthDates.filter(({date})=>habits.length&&habits.every(h=>!(logs[date]&&logs[date][h.id]))&&date<=todayStr()).length;
-  let best=0,cur=0; for(const s of scores){ cur=s>0?cur+1:0; best=Math.max(best,cur); }
+  const firstLogDate=Object.keys(logs).filter(d=>Object.values(logs[d]).some(Boolean)).sort()[0];
+  const missed=monthDates.filter(({date})=>habits.length&&firstLogDate&&date>=firstLogDate&&date<=today&&habits.every(h=>!(logs[date]&&logs[date][h.id]))).length;
+  let best=0;
+  habits.forEach(h=>{
+    let cur=0;
+    monthDates.forEach(({date})=>{
+      cur=(logs[date]&&logs[date][h.id])?cur+1:0;
+      best=Math.max(best,cur);
+    });
+  });
 
   document.getElementById('m-avg').textContent=avg+'%';
   document.getElementById('m-perfect').textContent=perfect;
@@ -539,7 +629,7 @@ function renderMonthly(){
   let cells=''; for(let i=0;i<firstDow;i++) cells+='<div></div>';
   monthDates.forEach(({date,day},idx)=>{
     const s=scores[idx];
-    const cls=s===100?'perfect':s>=70?'good':s>=40?'mid':s>0?'partial':date<=todayStr()?'has-data':'';
+    const cls=s===100?'perfect':s>=70?'good':s>=40?'mid':s>0?'partial':date<=today?'has-data':'';
     // Highlight if this day matches activeDate
     const isActive = date === activeDate;
     const extraStyle = isActive ? 'outline:2px solid var(--accent2);outline-offset:1px;' : '';
@@ -548,12 +638,12 @@ function renderMonthly(){
   cal.innerHTML=cells;
 
   const mhb=document.getElementById('monthHabitBars');
-  mhb.innerHTML=habits.length?[...habits].map(h=>({ ...h, pct:Math.round(monthDates.filter(({date})=>logs[date]&&logs[date][h.id]).length/daysInMonth*100) }))
-    .sort((a,b)=>b.pct-a.pct).map(h=>`<div class="habit-bar-row"><div class="habit-bar-label">${h.emoji} ${h.name}</div><div class="habit-bar-track"><div class="habit-bar-fill" style="width:${h.pct}%;background:${h.color}"></div></div><div class="habit-bar-pct">${h.pct}%</div></div>`).join('')
+  mhb.innerHTML=habits.length?[...habits].map(h=>({ ...h, pct:Math.round(monthDates.filter(({date})=>logs[date]&&logs[date][h.id]).length/elapsedDays*100) }))
+    .sort((a,b)=>b.pct-a.pct).map(h=>`<div class="habit-bar-row"><div class="habit-bar-label">${esc(h.emoji)} ${esc(h.name)}</div><div class="habit-bar-track"><div class="habit-bar-fill" style="width:${h.pct}%;background:${safeColor(h.color)}"></div></div><div class="habit-bar-pct">${h.pct}%</div></div>`).join('')
     :'<div style="font-size:0.8rem;color:var(--muted)">No habits yet</div>';
 
-  const totalDone=monthDates.reduce((acc,{date})=>acc+habits.filter(h=>logs[date]&&logs[date][h.id]).length,0);
-  const totalPossible=habits.length*daysInMonth;
+  const totalDone=doneSoFar;
+  const totalPossible=habits.length*elapsedDays;
   document.getElementById('monthHighlights').innerHTML=`
     <div class="highlight-row"><span>Total Completions</span><span class="highlight-val">${totalDone}</span></div>
     <div class="highlight-row"><span>Total Possible</span><span class="highlight-val">${totalPossible}</span></div>
@@ -574,8 +664,27 @@ window.jumpToDayFromCal = function(date) {
 };
 
 // ── TOAST ─────────────────────────────────────────────────────────────────
-function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2800); }
+// Fix 22: cancel the previous timer so a new toast isn't hidden early
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove('show'),2800);
+}
 window.showToast = showToast;
 
 // ── INIT ──────────────────────────────────────────────────────────────────
-setTimeout(()=>{ if(document.getElementById('loadingScreen').style.display!=='none'&&!currentUser){ showLogin(); } },3000);
+// Fix 15: if the page stays open past midnight, move "today" forward
+setInterval(()=>{
+  const t=todayStr();
+  if(t!==lastToday){
+    if(activeDate===lastToday) activeDate=t;
+    lastToday=t;
+    updateDateNavUI();
+    renderAll();
+  }
+}, 30000);
+
+// Fix 19: removed the 3-second timer that could flash the login screen.
+// onAuthStateChanged above always decides which screen to show.

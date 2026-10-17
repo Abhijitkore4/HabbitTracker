@@ -126,7 +126,11 @@
     <div class="page" id="page-weekly">
       <div class="topbar">
         <div class="page-title">Weekly <span>Report</span></div>
-        <div class="date-badge" id="weekRange"></div>
+        <div class="date-nav">
+          <button class="date-nav-btn" id="prevWeekBtn" title="Previous week">&#8592;</button>
+          <div class="date-nav-label" id="weekRange" style="cursor:default"></div>
+          <button class="date-nav-btn" id="nextWeekBtn" title="Next week" disabled>&#8594;</button>
+        </div>
       </div>
       <div class="stats-grid">
         <div class="stat-card c1"><div class="stat-label">Avg Completion</div><div class="stat-value" id="w-avg">0%</div><div class="stat-sub">this week</div></div>
@@ -145,7 +149,11 @@
     <div class="page" id="page-monthly">
       <div class="topbar">
         <div class="page-title">Monthly <span>Overview</span></div>
-        <div class="date-badge" id="monthName"></div>
+        <div class="date-nav">
+          <button class="date-nav-btn" id="prevMonthBtn" title="Previous month">&#8592;</button>
+          <div class="date-nav-label" id="monthName" style="cursor:default"></div>
+          <button class="date-nav-btn" id="nextMonthBtn" title="Next month" disabled>&#8594;</button>
+        </div>
       </div>
       <div class="stats-grid">
         <div class="stat-card c1"><div class="stat-label">Month Score</div><div class="stat-value" id="m-avg">0%</div><div class="stat-sub">overall</div></div>
@@ -162,6 +170,7 @@
             <span><span style="display:inline-block;width:10px;height:10px;background:var(--accent3);border-radius:2px;margin-right:4px;"></span>100%</span>
             <span><span style="display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px;margin-right:4px;"></span>70%+</span>
             <span><span style="display:inline-block;width:10px;height:10px;background:var(--accent2);border-radius:2px;margin-right:4px;"></span>40%+</span>
+            <span><span style="display:inline-block;width:10px;height:10px;background:rgba(247,201,72,0.3);border-radius:2px;margin-right:4px;"></span>1-39%</span>
             <span><span style="display:inline-block;width:10px;height:10px;background:var(--border);border-radius:2px;margin-right:4px;"></span>0%</span>
           </div>
         </div>
