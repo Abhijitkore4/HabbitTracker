@@ -305,6 +305,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     item.classList.add('active');
+    document.querySelectorAll('[data-page="'+item.dataset.page+'"]').forEach(n => n.classList.add('active'));
     document.getElementById('page-'+item.dataset.page).classList.add('active');
     closeSidebar();
     if(item.dataset.page==='weekly')    { weekOffset=0;  renderWeekly(); }
@@ -313,12 +314,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
   });
 });
 
-document.getElementById('hamburger').addEventListener('click', () => {
-  document.getElementById('sidebar').classList.toggle('open');
-  document.getElementById('sidebarOverlay').classList.toggle('open');
-});
-document.getElementById('sidebarOverlay').addEventListener('click', closeSidebar);
-function closeSidebar(){ document.getElementById('sidebar').classList.remove('open'); document.getElementById('sidebarOverlay').classList.remove('open'); }
+function closeSidebar(){ window.scrollTo({top:0}); }
 
 // Fix 16: previous / next week and month
 document.getElementById('prevWeekBtn').addEventListener('click', () => { weekOffset--; renderWeekly(); });
@@ -659,7 +655,7 @@ window.jumpToDayFromCal = function(date) {
   // Switch to dashboard
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelector('[data-page="dashboard"]').classList.add('active');
+  document.querySelectorAll('[data-page="dashboard"]').forEach(n => n.classList.add('active'));
   document.getElementById('page-dashboard').classList.add('active');
 };
 
