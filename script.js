@@ -347,7 +347,7 @@ function renderDashboard(){
   const offset = 314 - (pct/100*314);
   document.getElementById('ringFill').style.strokeDashoffset = offset;
   document.getElementById('ringPct').textContent = pct+'%';
-  document.getElementById('ringFill').style.stroke = pct>=80?'#3ee8b5':pct>=50?'#7c5cfc':'#f7c948';
+  document.getElementById('ringFill').style.stroke = pct>=80?'#3ee8b5':pct>=50?'#ffffff':'#f7c948';
 
   // Habits list
   const list = document.getElementById('habitsList');
